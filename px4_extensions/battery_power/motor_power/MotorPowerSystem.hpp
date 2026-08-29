@@ -58,6 +58,7 @@ private:
 	double _last_power_w{0.0};
 	double _static_power_w{8.0};
 	double _capacity_ah{5.0};
+	double _initial_charge_ah{5.0};
 	double _charge_ah{5.0};
 	double _ocv_full_v{16.8};
 	double _ocv_delta_v{-2.4};
@@ -66,6 +67,9 @@ private:
 	double _voltage_v{16.8};
 	double _current_a{0.0};
 	double _soc{1.0};
+	double _reset_charge_after_idle_s{3.0};
+	double _idle_rotor_threshold_rad_s{1.0};
+	double _rotor_idle_elapsed_s{0.0};
 
 	std::string _battery_name{"linear_battery"};
 	std::string _power_topic;

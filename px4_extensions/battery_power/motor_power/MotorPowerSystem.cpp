@@ -44,15 +44,20 @@ void MotorPowerSystem::Configure(const Entity &_entity,
 	_sdf->Get("motor_efficiency", _motor_efficiency, _motor_efficiency);
 	_sdf->Get("static_power", _static_power_w, _static_power_w);
 	_sdf->Get("capacity", _capacity_ah, _capacity_ah);
-	_sdf->Get("initial_charge", _charge_ah, _capacity_ah);
+	_sdf->Get("initial_charge", _initial_charge_ah, _capacity_ah);
 	_sdf->Get("open_circuit_voltage_constant_coef", _ocv_full_v, _ocv_full_v);
 	_sdf->Get("open_circuit_voltage_linear_coef", _ocv_delta_v, _ocv_delta_v);
 	_sdf->Get("resistance", _internal_resistance_ohm, _internal_resistance_ohm);
 	_sdf->Get("smooth_current_tau", _current_tau_s, _current_tau_s);
+	_sdf->Get("reset_charge_after_idle_s", _reset_charge_after_idle_s, _reset_charge_after_idle_s);
+	_sdf->Get("idle_rotor_threshold_rad_s", _idle_rotor_threshold_rad_s, _idle_rotor_threshold_rad_s);
 	_motor_efficiency = std::clamp(_motor_efficiency, 0.01, 1.0);
 	_capacity_ah = std::max(_capacity_ah, 0.001);
-	_charge_ah = std::clamp(_charge_ah, 0.0, _capacity_ah);
+	_initial_charge_ah = std::clamp(_initial_charge_ah, 0.0, _capacity_ah);
+	_charge_ah = _initial_charge_ah;
 	_current_tau_s = std::max(_current_tau_s, 0.001);
+	_reset_charge_after_idle_s = std::max(_reset_charge_after_idle_s, 0.0);
+	_idle_rotor_threshold_rad_s = std::max(_idle_rotor_threshold_rad_s, 0.0);
 	_soc = _charge_ah / _capacity_ah;
 	_voltage_v = _ocv_full_v + _ocv_delta_v * (1.0 - _soc);
 
@@ -95,6 +100,7 @@ void MotorPowerSystem::PreUpdate(const UpdateInfo &_info, EntityComponentManager
 	}
 
 	double motor_power_w = 0.0;
+	double max_rotor_velocity_rad_s = 0.0;
 
 	for (const Entity joint : _joint_entities) {
 		const auto *velocity = _ecm.Component<components::JointVelocity>(joint);
@@ -104,6 +110,7 @@ void MotorPowerSystem::PreUpdate(const UpdateInfo &_info, EntityComponentManager
 		}
 
 		const double omega = std::abs(velocity->Data()[0]) * _rotor_velocity_slowdown;
+		max_rotor_velocity_rad_s = std::max(max_rotor_velocity_rad_s, omega);
 		const double thrust = _motor_constant * omega * omega;
 		const double torque = _moment_constant * thrust;
 		motor_power_w += std::abs(torque * omega) / _motor_efficiency;
@@ -111,6 +118,19 @@ void MotorPowerSystem::PreUpdate(const UpdateInfo &_info, EntityComponentManager
 
 	_last_power_w = std::max(motor_power_w, 0.0);
 	const double dt_s = std::chrono::duration<double>(_info.dt).count();
+	if (max_rotor_velocity_rad_s <= _idle_rotor_threshold_rad_s) {
+		_rotor_idle_elapsed_s += dt_s;
+	} else {
+		_rotor_idle_elapsed_s = 0.0;
+	}
+
+	if (_rotor_idle_elapsed_s >= _reset_charge_after_idle_s) {
+		_charge_ah = _initial_charge_ah;
+		_current_a = 0.0;
+		_soc = _charge_ah / _capacity_ah;
+		_voltage_v = _ocv_full_v + _ocv_delta_v * (1.0 - _soc);
+	}
+
 	const double total_power_w = _static_power_w + _last_power_w;
 	const double raw_current_a = total_power_w / std::max(_voltage_v, 0.1);
 	const double alpha = std::clamp(dt_s / (_current_tau_s + dt_s), 0.0, 1.0);

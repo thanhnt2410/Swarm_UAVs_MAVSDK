@@ -136,6 +136,7 @@ void GZBridge::batteryCallback(const gz::msgs::BatteryState &msg)
 \t_battery.setConnected(msg.voltage() > 0.0);
 \t_battery.updateVoltage(static_cast<float>(msg.voltage()));
 \t_battery.updateCurrent(math::max(static_cast<float>(msg.current()), 0.0f));
+\t_battery.setStateOfCharge(math::constrain(static_cast<float>(msg.percentage()) / 100.0f, 0.0f, 1.0f));
 \t_battery.updateAndPublishBatteryStatus(hrt_absolute_time());
 }
 
@@ -146,6 +147,14 @@ void GZBridge::batteryCallback(const gz::msgs::BatteryState &msg)
         battery_methods + "bool GZBridge::subscribePoseInfo(bool required)\n",
         "bool GZBridge::subscribeBattery(bool required)",
     )
+
+    text = path.read_text()
+    soc_update = "\t_battery.setStateOfCharge(math::constrain(static_cast<float>(msg.percentage()) / 100.0f, 0.0f, 1.0f));\n"
+    if soc_update not in text:
+        current_update = "\t_battery.updateCurrent(math::max(static_cast<float>(msg.current()), 0.0f));\n"
+        if text.count(current_update) != 1:
+            raise RuntimeError(f"Cannot find battery current update in {path}")
+        path.write_text(text.replace(current_update, current_update + soc_update, 1))
 
 
 def xml_value(value: object) -> str:
@@ -169,6 +178,8 @@ def render_model_plugin(config: dict) -> str:
         "open_circuit_voltage_linear_coef",
         "resistance",
         "smooth_current_tau",
+        "reset_charge_after_idle_s",
+        "idle_rotor_threshold_rad_s",
     )
     missing = [key for key in required if key not in config]
     if missing:

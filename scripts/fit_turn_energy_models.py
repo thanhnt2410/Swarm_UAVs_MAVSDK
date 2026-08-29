@@ -65,17 +65,17 @@ def format_formula(target: str, coef: np.ndarray) -> str:
     terms = []
     for idx, value in enumerate(coef[:-1], start=1):
         if degree == 1:
-            terms.append(f"{value:.8g} * theta_rad")
+            terms.append(f"{value:.8g} * abs(theta_rad)")
         else:
-            terms.append(f"{value:.8g} * theta_rad^{idx}")
+            terms.append(f"{value:.8g} * abs(theta_rad)^{idx}")
     terms.append(f"{coef[-1]:.8g}")
     return f"{target} = " + " + ".join(terms)
 
 
 def fit_target(train: pd.DataFrame, test: pd.DataFrame, target: str, degree: int) -> Tuple[np.ndarray, Dict[str, float]]:
-    theta_train = train["angle_rad"].to_numpy(dtype=float)
+    theta_train = np.abs(train["angle_rad"].to_numpy(dtype=float))
     y_train = train[target].to_numpy(dtype=float)
-    theta_test = test["angle_rad"].to_numpy(dtype=float)
+    theta_test = np.abs(test["angle_rad"].to_numpy(dtype=float))
     y_test = test[target].to_numpy(dtype=float)
     coef = fit_polynomial(theta_train, y_train, degree)
     y_pred = predict_polynomial(theta_test, coef)
@@ -88,10 +88,14 @@ def maybe_fit_random_forest(train: pd.DataFrame, test: pd.DataFrame, target: str
     except Exception:
         return None
 
-    features = ["angle_rad", "speed_m_s", "turn_radius_m", "arc_length_m", "total_distance_m"]
+    features = ["angle_rad", "speed_m_s", "total_distance_m"]
+    train_features = train[features].copy()
+    test_features = test[features].copy()
+    train_features["angle_rad"] = train_features["angle_rad"].abs()
+    test_features["angle_rad"] = test_features["angle_rad"].abs()
     model = RandomForestRegressor(n_estimators=200, random_state=42, min_samples_leaf=1)
-    model.fit(train[features], train[target])
-    pred = model.predict(test[features])
+    model.fit(train_features, train[target])
+    pred = model.predict(test_features)
     return metrics(test[target].to_numpy(dtype=float), pred)
 
 

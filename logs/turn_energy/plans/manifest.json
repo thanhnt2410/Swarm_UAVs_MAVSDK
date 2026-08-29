@@ -3,99 +3,81 @@
         "plan_file": "logs/turn_energy/plans/turn_angle_0deg.plan",
         "angle_deg": 0.0,
         "waypoints": 3,
-        "turn_radius_m": 5.0,
         "speed_m_s": 2.5,
         "altitude_m": 13.0,
         "pre_length_m": 30.0,
-        "post_length_m": 30.0,
-        "arc_step_m": 1.5
+        "post_length_m": 30.0
     },
     {
         "plan_file": "logs/turn_energy/plans/turn_angle_15deg.plan",
         "angle_deg": 15.0,
-        "waypoints": 5,
-        "turn_radius_m": 5.0,
+        "waypoints": 3,
         "speed_m_s": 2.5,
         "altitude_m": 13.0,
         "pre_length_m": 30.0,
-        "post_length_m": 30.0,
-        "arc_step_m": 1.5
+        "post_length_m": 30.0
     },
     {
         "plan_file": "logs/turn_energy/plans/turn_angle_30deg.plan",
         "angle_deg": 30.0,
-        "waypoints": 5,
-        "turn_radius_m": 5.0,
+        "waypoints": 3,
         "speed_m_s": 2.5,
         "altitude_m": 13.0,
         "pre_length_m": 30.0,
-        "post_length_m": 30.0,
-        "arc_step_m": 1.5
+        "post_length_m": 30.0
     },
     {
         "plan_file": "logs/turn_energy/plans/turn_angle_45deg.plan",
         "angle_deg": 45.0,
-        "waypoints": 6,
-        "turn_radius_m": 5.0,
+        "waypoints": 3,
         "speed_m_s": 2.5,
         "altitude_m": 13.0,
         "pre_length_m": 30.0,
-        "post_length_m": 30.0,
-        "arc_step_m": 1.5
+        "post_length_m": 30.0
     },
     {
         "plan_file": "logs/turn_energy/plans/turn_angle_60deg.plan",
         "angle_deg": 60.0,
-        "waypoints": 7,
-        "turn_radius_m": 5.0,
+        "waypoints": 3,
         "speed_m_s": 2.5,
         "altitude_m": 13.0,
         "pre_length_m": 30.0,
-        "post_length_m": 30.0,
-        "arc_step_m": 1.5
+        "post_length_m": 30.0
     },
     {
         "plan_file": "logs/turn_energy/plans/turn_angle_90deg.plan",
         "angle_deg": 90.0,
-        "waypoints": 9,
-        "turn_radius_m": 5.0,
+        "waypoints": 3,
         "speed_m_s": 2.5,
         "altitude_m": 13.0,
         "pre_length_m": 30.0,
-        "post_length_m": 30.0,
-        "arc_step_m": 1.5
+        "post_length_m": 30.0
     },
     {
         "plan_file": "logs/turn_energy/plans/turn_angle_120deg.plan",
         "angle_deg": 120.0,
-        "waypoints": 10,
-        "turn_radius_m": 5.0,
+        "waypoints": 3,
         "speed_m_s": 2.5,
         "altitude_m": 13.0,
         "pre_length_m": 30.0,
-        "post_length_m": 30.0,
-        "arc_step_m": 1.5
+        "post_length_m": 30.0
     },
     {
         "plan_file": "logs/turn_energy/plans/turn_angle_150deg.plan",
         "angle_deg": 150.0,
-        "waypoints": 12,
-        "turn_radius_m": 5.0,
+        "waypoints": 3,
         "speed_m_s": 2.5,
         "altitude_m": 13.0,
         "pre_length_m": 30.0,
-        "post_length_m": 30.0,
-        "arc_step_m": 1.5
+        "post_length_m": 30.0
     },
     {
         "plan_file": "logs/turn_energy/plans/turn_angle_180deg.plan",
         "angle_deg": 180.0,
-        "waypoints": 14,
-        "turn_radius_m": 5.0,
+        "waypoints": 3,
         "speed_m_s": 2.5,
         "altitude_m": 13.0,
         "pre_length_m": 30.0,
-        "post_length_m": 30.0,
-        "arc_step_m": 1.5
+        "post_length_m": 30.0
     }
 ]

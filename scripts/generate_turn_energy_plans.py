@@ -33,36 +33,21 @@ def local_xy_to_lat_lon(origin: LatLon, point: LocalXY) -> LatLon:
 
 def build_turn_points(
     angle_deg: float,
-    turn_radius_m: float,
     pre_length_m: float,
     post_length_m: float,
-    arc_step_m: float,
 ) -> List[LocalXY]:
+    if not 0.0 <= abs(angle_deg) <= 180.0:
+        raise ValueError("abs(angle_deg) must be between 0 and 180")
     angle_rad = math.radians(angle_deg)
-    sign = 1.0 if angle_rad >= 0 else -1.0
-    theta_abs = abs(angle_rad)
-    points: List[LocalXY] = [(0.0, 0.0), (pre_length_m, 0.0)]
-
-    if theta_abs > 1e-9:
-        steps = max(2, int(math.ceil(turn_radius_m * theta_abs / arc_step_m)))
-        for idx in range(1, steps + 1):
-            phi = theta_abs * idx / steps
-            x = pre_length_m + turn_radius_m * math.sin(phi)
-            y = sign * turn_radius_m * (1.0 - math.cos(phi))
-            points.append((x, y))
-
-        exit_heading = sign * theta_abs
-        end_x, end_y = points[-1]
-        points.append(
-            (
-                end_x + post_length_m * math.cos(exit_heading),
-                end_y + post_length_m * math.sin(exit_heading),
-            )
-        )
-    else:
-        points.append((pre_length_m + post_length_m, 0.0))
-
-    return points
+    turn_rad = math.copysign(math.pi - abs(angle_rad), angle_deg if angle_deg != 0.0 else 1.0)
+    return [
+        (0.0, 0.0),
+        (pre_length_m, 0.0),
+        (
+            pre_length_m + post_length_m * math.cos(turn_rad),
+            post_length_m * math.sin(turn_rad),
+        ),
+    ]
 
 
 def simple_item(
@@ -151,11 +136,9 @@ def main(argv: Optional[Sequence[str]] = None) -> None:
     parser.add_argument("--origin-lat", type=float, default=47.3977419)
     parser.add_argument("--origin-lon", type=float, default=8.5455940)
     parser.add_argument("--speed-m-s", type=float, default=2.5)
-    parser.add_argument("--turn-radius-m", type=float, default=5.0)
     parser.add_argument("--altitude-m", type=float, default=13.0)
     parser.add_argument("--pre-length-m", type=float, default=30.0)
     parser.add_argument("--post-length-m", type=float, default=30.0)
-    parser.add_argument("--arc-step-m", type=float, default=1.5)
     args = parser.parse_args(argv)
 
     args.output_dir.mkdir(parents=True, exist_ok=True)
@@ -165,10 +148,8 @@ def main(argv: Optional[Sequence[str]] = None) -> None:
     for angle_deg in parse_angles(args.angles):
         points = build_turn_points(
             angle_deg=angle_deg,
-            turn_radius_m=args.turn_radius_m,
             pre_length_m=args.pre_length_m,
             post_length_m=args.post_length_m,
-            arc_step_m=args.arc_step_m,
         )
         plan = build_plan(
             origin=origin,
@@ -184,12 +165,10 @@ def main(argv: Optional[Sequence[str]] = None) -> None:
                 "plan_file": str(path),
                 "angle_deg": angle_deg,
                 "waypoints": len(plan["mission"]["items"]),
-                "turn_radius_m": args.turn_radius_m,
                 "speed_m_s": args.speed_m_s,
                 "altitude_m": args.altitude_m,
                 "pre_length_m": args.pre_length_m,
                 "post_length_m": args.post_length_m,
-                "arc_step_m": args.arc_step_m,
             }
         )
         print(f"Generated {path} ({len(plan['mission']['items'])} mission items)")

@@ -87,6 +87,8 @@ gazebo_battery_model:
 | `static_power` | W | Tải cố định của flight controller và cảm biến |
 | `capacity` | Ah | Dung lượng danh định của pin |
 | `initial_charge` | Ah | Điện lượng ban đầu khi bắt đầu mô phỏng |
+| `reset_charge_after_idle_s` | s | Thời gian rotor phải dừng trước khi pin mô phỏng được reset |
+| `idle_rotor_threshold_rad_s` | rad/s | Ngưỡng vận tốc rotor để xác định UAV đã disarm |
 | `open_circuit_voltage_constant_coef` | V | Điện áp hở mạch khi pin đầy |
 | `open_circuit_voltage_linear_coef` | V | Độ thay đổi điện áp từ đầy đến cạn |
 | `resistance` | Ω | Nội trở toàn bộ pack pin |
@@ -281,7 +283,86 @@ Score = Cost + 0.1 × Time + 10 × Energy
 
 Score càng thấp càng tốt.
 
-## 9. Kiểm tra hoạt động
+## 9. Thiết kế đường bay thu dữ liệu góc V1
+
+Script `scripts/collect_turn_energy_data.py` dùng đúng ba waypoint để tạo một
+góc, không dùng cung tròn, bán kính quay hoặc waypoint trung gian:
+
+```text
+C
+ \
+  \ theta
+   B -------- A
+```
+
+Trong hệ tọa độ cục bộ, trục `x` hướng Đông và trục `y` hướng Bắc:
+
+```text
+A = (0, 0)
+B = (L_pre, 0)
+psi = sign(theta) × (180° - abs(theta))
+C = (L_pre + L_post × cos(psi), L_post × sin(psi))
+```
+
+`theta` là góc trong `ABC`, còn `psi` là độ đổi heading của UAV. Với cấu hình
+mặc định `L_pre = L_post = 30 m` và `theta = 30°`:
+
+```text
+A = (0.000, 0.000)
+B = (30.000, 0.000)
+psi = 150°
+C = (4.019, 15.000)
+```
+
+Tổng chiều dài hình học của mọi góc luôn bằng:
+
+```text
+L_total = L_pre + L_post = 60 m
+```
+
+Để khớp mission waypoint thực tế của `DroneService`, cả ba waypoint dùng
+`is_fly_through=False`, `loiter_time_s=1` và acceptance radius mặc định của
+PX4. UAV phải đạt từng GPS waypoint, giữ tại đó khoảng một giây rồi mới bay
+sang waypoint tiếp theo. Vì vậy phép đo bao gồm hành vi giảm tốc, giữ vị trí,
+đổi hướng và tăng tốc tại `B` giống luồng ứng dụng hiện tại.
+
+Theo định nghĩa góc trong này, `theta=180°` là bay thẳng và được dùng làm
+baseline. `theta=90°` là rẽ vuông, còn `theta=0°` là bay từ A đến B rồi quay
+ngược đúng đường cũ. Bán kính rẽ không phải biến được kiểm soát trong V1.
+
+Mỗi lần lặp gồm hai lượt đo độc lập:
+
+```text
+Lượt đi: A → B → C, ghi góc theta
+Land → disarm → reset pin mô phỏng
+Lượt về: C → B → A, ghi góc -theta
+Land → disarm → reset pin mô phỏng
+```
+
+Ví dụ góc input `30°` tạo hai dòng CSV có `angle_deg=30` và
+`angle_deg=-30`. Chiều về sử dụng chính danh sách waypoint chiều đi theo thứ
+tự ngược, không dùng RTL. Thời gian landing, disarm và hồi pin nằm ngoài
+`measured_time_s` và `measured_energy_wh`.
+
+Chạy bộ dữ liệu V1:
+
+```bash
+python scripts/collect_turn_energy_data.py \
+  --angles "0,15,30,45,60,90,120,150,180" \
+  --repeats 3 \
+  --output logs/turn_energy/three_point_full.csv
+```
+
+`--repeats 3` tạo ba cặp đi/về cho mỗi góc. Collector chỉ chấp nhận telemetry
+điện áp/dòng hợp lệ và không dùng fallback 120 W cho dữ liệu calibration.
+
+Không trộn các file `baseline_0_90.csv` hoặc `baseline_full.csv` cũ với
+`three_point_full.csv`. Hai file cũ được thu bằng thiết kế cung tròn bán kính
+5 m và có schema/hình học khác với thiết kế ba waypoint V1 hiện tại. Dataset
+ba điểm đã thu trước khi đổi định nghĩa `theta` sang góc trong `ABC` cũng phải
+thu lại; không dùng chung với dữ liệu mới.
+
+## 10. Kiểm tra hoạt động
 
 Sau khi `gz_x500` chạy, kiểm tra công suất động cơ:
 
@@ -313,7 +394,7 @@ python3 px4_extensions/battery_power/install.py \
 make -C dependencies/PX4-Autopilot px4_sitl
 ```
 
-## 10. Xử lý lỗi thường gặp
+## 11. Xử lý lỗi thường gặp
 
 ### Không có topic `motor_power`
 
@@ -338,7 +419,7 @@ make -C dependencies/PX4-Autopilot px4_sitl
 Điều này có nghĩa ứng dụng không nhận được ít nhất hai mẫu V/I hợp lệ cho UAV.
 Kiểm tra lần lượt topic Gazebo, `battery_status` của PX4 và telemetry MAVSDK.
 
-## 11. Các file quan trọng
+## 12. Các file quan trọng
 
 | File | Chức năng |
 |---|---|
@@ -349,4 +430,3 @@ Kiểm tra lần lượt topic Gazebo, `battery_status` của PX4 và telemetry 
 | `swam_uav.sh` | Đồng bộ extension và chạy swarm |
 | `src/services/drone_service.py` | Áp dụng tham số PX4 và đọc pin |
 | `src/main_controller.py` | Tích phân năng lượng và tổng hợp kết quả |
-

@@ -20,3 +20,5 @@ pygame==2.6.1
 pandas==2.3.3
 numpy==2.2.6
 scipy==1.15.3
+scikit-learn
+xgboost
