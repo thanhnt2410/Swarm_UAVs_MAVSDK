@@ -249,14 +249,25 @@ async def takeoff_for_run(drone: System, args: argparse.Namespace) -> None:
             await asyncio.sleep(args.settle_s)
             return
         except asyncio.TimeoutError as exc:
-            flight_mode = await first_flight_mode_value(drone, timeout_s=2.0)
-            is_armed = await first_armed_state(drone, timeout_s=2.0)
+            flight_mode = "unknown"
+            is_armed = "unknown"
+            try:
+                flight_mode = await first_flight_mode_value(drone, timeout_s=2.0)
+            except (asyncio.TimeoutError, RuntimeError) as state_exc:
+                print(f"[collect] Could not read flight mode after takeoff timeout: {state_exc}")
+            try:
+                is_armed = await first_armed_state(drone, timeout_s=2.0)
+            except (asyncio.TimeoutError, RuntimeError) as state_exc:
+                print(f"[collect] Could not read armed state after takeoff timeout: {state_exc}")
             print(f"[collect] Takeoff timed out: flight_mode={flight_mode}, armed={is_armed}.")
             print("[collect] Landing and disarming before takeoff retry...")
             await drone.action.land()
             await wait_landed(drone, timeout_s=args.landing_timeout_s)
-            if await first_armed_state(drone, timeout_s=5.0):
-                await drone.action.disarm()
+            try:
+                if await first_armed_state(drone, timeout_s=5.0):
+                    await drone.action.disarm()
+            except (asyncio.TimeoutError, RuntimeError) as state_exc:
+                print(f"[collect] Could not confirm armed state before disarm: {state_exc}")
             if attempt == args.takeoff_attempts:
                 raise RuntimeError(
                     f"Takeoff failed after {args.takeoff_attempts} attempts "

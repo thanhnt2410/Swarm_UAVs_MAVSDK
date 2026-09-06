@@ -1,6 +1,7 @@
 import asyncio
 import glob
 import os
+import pickle
 import sys
 import subprocess
 import time
@@ -67,6 +68,9 @@ except (FileNotFoundError, ValueError) as e:
     sys.exit(1)
 
 RESCUE_UAV_INDEX = config.RESCUE_UAV_INDEX
+MISSION_ENERGY_MODEL_DIR = Path(__file__).resolve().parent.parent / "models" / "mission_energy"
+MISSION_ENERGY_MODEL_NAME = "linear"
+MISSION_ENERGY_FEATURE_COLUMNS = ["total_distance_m", "stop_count"]
 
 # gimbal 
 GIMBAL_C12_PATH = os.path.join(os.path.dirname(__file__), "GimbalC12.py")
@@ -98,6 +102,7 @@ class MainController:
         self.view = Map(config=config)
         self.ui = self.view.ui
         self.logger = logger
+        self._mission_energy_models = {}
         self.logger.log(f"Initialize detection model on {self.config.stream['source'].get('device', 'cpu')}...", level="info")
         start_time = time.time()
         for uav_idx in range(1, self.config.MAX_UAV_COUNT + 1):
@@ -1727,6 +1732,42 @@ class MainController:
             return [start_coord] + path
         return path
 
+    def _load_mission_energy_model(self, target, model_name=MISSION_ENERGY_MODEL_NAME):
+        cache_key = (target, model_name)
+        if cache_key in self._mission_energy_models:
+            return self._mission_energy_models[cache_key]
+
+        model_path = MISSION_ENERGY_MODEL_DIR / f"{target}_{model_name}.pkl"
+        with model_path.open("rb") as model_file:
+            model = pickle.load(model_file)
+        self._mission_energy_models[cache_key] = model
+        return model
+
+    def _predict_single_path_energy_time(self, distance_m, waypoint_count):
+        features = pd.DataFrame([{
+            "total_distance_m": max(float(distance_m), 0.0),
+            "stop_count": max(int(waypoint_count), 1),
+        }], columns=MISSION_ENERGY_FEATURE_COLUMNS)
+
+        energy_model = self._load_mission_energy_model("total_flight_energy_wh")
+        time_model = self._load_mission_energy_model("total_flight_time_s")
+        energy_wh = float(energy_model.predict(features)[0])
+        flight_time_s = float(time_model.predict(features)[0])
+        return max(energy_wh, 0.0), max(flight_time_s, 0.0)
+
+    def _predict_planning_only_energy_time(self, paths_by_uav, distances_by_uav):
+        total_energy_wh = 0.0
+        longest_flight_time_s = 0.0
+        for uav_index, path in paths_by_uav.items():
+            waypoint_count = max(len(path) - 1, 1)
+            energy_wh, flight_time_s = self._predict_single_path_energy_time(
+                distances_by_uav.get(uav_index, 0.0),
+                waypoint_count,
+            )
+            total_energy_wh += energy_wh
+            longest_flight_time_s = max(longest_flight_time_s, flight_time_s)
+        return total_energy_wh, longest_flight_time_s
+
     def _clear_simulation_layers(self, include_grid=False, include_best=False):
         marker_prefixes = ["sim_current_pt_"]
         polyline_names = ["current_run_path_polyline"]
@@ -2054,6 +2095,7 @@ class MainController:
 
                     # 1. TÍNH TOÁN ĐƯỜNG ĐI TOÁN HỌC CHO TỪNG UAV ĐƯỢC CHỌN
                     paths_by_uav = {}
+                    distances_by_uav = {}
                     run_cost = 0
                     run_dist = 0
                     run_turns = 0
@@ -2095,11 +2137,13 @@ class MainController:
                         analysis_result = analyzer.compute_coverage()
 
                         run_cost += analysis_result.get("cost", 0)
-                        run_dist += analysis_result.get("distance_m", 0)
+                        path_distance_m = analysis_result.get("distance_m", 0)
+                        run_dist += path_distance_m
                         run_turns += analysis_result.get("turns", 0)
                         run_swept += analysis_result.get("swept_area_m2", 0)
                         run_coverage += analysis_result.get("coverage_percent", 0) / 100.0
                         paths_by_uav[uav_index] = path
+                        distances_by_uav[uav_index] = path_distance_m
 
                     if not paths_by_uav:
                         current_run += 1
@@ -2167,12 +2211,26 @@ class MainController:
                         plan_files_by_uav[uav_index] = sim_plan_file
 
                     if planning_only:
-                        flight_time = 0
-                        energy_wh = 0
-                        self.view.update_terminal(
-                            f"[SIM] Planning-only: drew {len(paths_by_uav)} UAV paths for {algo_name}.",
-                            0,
-                        )
+                        try:
+                            energy_wh, flight_time = self._predict_planning_only_energy_time(
+                                paths_by_uav,
+                                distances_by_uav,
+                            )
+                            self.view.update_terminal(
+                                f"[SIM] Planning-only: drew {len(paths_by_uav)} UAV paths for {algo_name}. "
+                                f"Predicted Time = {flight_time:.1f}s, Energy = {energy_wh:.3f} Wh "
+                                f"({MISSION_ENERGY_MODEL_NAME} model).",
+                                0,
+                            )
+                        except Exception as e:
+                            flight_time = 0
+                            energy_wh = 0
+                            self.view.update_terminal(
+                                f"[SIM] Planning-only: drew {len(paths_by_uav)} UAV paths for {algo_name}, "
+                                f"but energy/time prediction failed: {e}",
+                                0,
+                            )
+                            self.logger.error(f"[SIM] Mission energy/time prediction failed: {e}")
                     else:
                         # 3. ĐO LƯỜNG VÀ BAY MÔ PHỎNG THỰC TẾ
                         # Nạp mission và chạy đồng thời cho tất cả UAV được chọn.
