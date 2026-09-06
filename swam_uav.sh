@@ -5,6 +5,7 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 IMAGE="${SW_UAV_IMAGE:-sw-uav:latest}"
 NAME="${SW_UAV_CONTAINER:-sw-uav}"
 DOCKER_CMD="${SW_UAV_DOCKER_CMD:-docker}"
+BUILD_SCRIPT="${SCRIPT_DIR}/docker/build.sh"
 
 # Detect if running inside Docker
 IN_DOCKER=0
@@ -82,19 +83,53 @@ if [ "${IN_DOCKER}" -eq 0 ]; then
     xhost +local:docker >/dev/null 2>&1 || true
     xhost +local:root >/dev/null 2>&1 || true
 
+    TORCH_VARIANT="$(SW_UAV_DOCKER_CMD="${DOCKER_CMD}" "${BUILD_SCRIPT}" --detect)"
+    IMAGE_TORCH_VARIANT="$(${DOCKER_CMD} image inspect \
+        --format '{{index .Config.Labels "org.sw-uav.torch-variant"}}' "${IMAGE}" 2>/dev/null || true)"
+
+    if [ "${IMAGE_TORCH_VARIANT}" != "${TORCH_VARIANT}" ]; then
+        echo "[sw-uav] Image '${IMAGE}' is missing or uses '${IMAGE_TORCH_VARIANT:-unknown}', expected '${TORCH_VARIANT}'."
+        SW_UAV_DOCKER_CMD="${DOCKER_CMD}" SW_UAV_TORCH_VARIANT="${TORCH_VARIANT}" "${BUILD_SCRIPT}"
+    fi
+
+    DOCKER_ACCELERATOR_ARGS=()
+    DOCKER_DEVICE_ARGS=()
+    if [ "${TORCH_VARIANT}" = "cpu" ]; then
+        echo "[sw-uav] Accelerator: CPU PyTorch; host AMD/Mesa graphics are supported."
+    else
+        echo "[sw-uav] Accelerator: NVIDIA CUDA (${TORCH_VARIANT})."
+        DOCKER_ACCELERATOR_ARGS=(
+            --gpus all
+            -e __GLX_VENDOR_LIBRARY_NAME=nvidia
+            -e NVIDIA_VISIBLE_DEVICES=all
+            -e "NVIDIA_DRIVER_CAPABILITIES=compute,utility,graphics,video,display"
+        )
+    fi
+    if [ -d /dev/dri ]; then
+        DOCKER_DEVICE_ARGS=(--device /dev/dri:/dev/dri)
+    fi
+
+    if ${DOCKER_CMD} ps -a --format '{{.Names}}' | grep -Fxq "${NAME}"; then
+        CURRENT_IMAGE_ID="$(${DOCKER_CMD} image inspect --format '{{.Id}}' "${IMAGE}")"
+        CONTAINER_IMAGE_ID="$(${DOCKER_CMD} inspect --format '{{.Image}}' "${NAME}")"
+        if [ "${CURRENT_IMAGE_ID}" != "${CONTAINER_IMAGE_ID}" ]; then
+            echo "[sw-uav] Recreating '${NAME}' because its image or accelerator variant changed."
+            ${DOCKER_CMD} rm -f "${NAME}" >/dev/null
+        fi
+    fi
+
     if ! ${DOCKER_CMD} ps -a --format '{{.Names}}' | grep -Fxq "${NAME}"; then
         echo "[sw-uav] Container '${NAME}' not found. Creating it from image '${IMAGE}'..."
         ${DOCKER_CMD} run -dit \
-            --gpus all \
+            "${DOCKER_ACCELERATOR_ARGS[@]}" \
+            "${DOCKER_DEVICE_ARGS[@]}" \
             --net=host \
             --ipc=host \
             -e SW_UAV_DOCKER=1 \
             -e DISPLAY="${DISPLAY:-:0}" \
             -e QT_X11_NO_MITSHM=1 \
             -e QT_XCB_GL_INTEGRATION=xcb_glx \
-            -e __GLX_VENDOR_LIBRARY_NAME=nvidia \
-            -e NVIDIA_VISIBLE_DEVICES=all \
-            -e NVIDIA_DRIVER_CAPABILITIES=compute,utility,graphics,video,display \
+            -e SW_UAV_TORCH_VARIANT="${TORCH_VARIANT}" \
             -v /tmp/.X11-unix:/tmp/.X11-unix:rw \
             -v "${SCRIPT_DIR}:/app" \
             -w /app \

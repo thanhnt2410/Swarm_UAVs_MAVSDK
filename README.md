@@ -49,95 +49,150 @@ gz topic -e -n 1 -t /model/x500/battery/linear_battery/state
 
 ### 7. [QGroundControl Ground Control Station](https://github.com/mavlink/qgroundcontrol/releases) (Optional)
 
-## Using Docker
+## Cài đặt và chạy bằng Docker
 
-Docker image đã bao gồm Ubuntu 22.04, Gazebo Harmonic, môi trường build PX4,
-Python và các thư viện của ứng dụng. Host không cần cài CUDA Toolkit hoặc
-cuDNN. Nếu dùng GPU NVIDIA, host vẫn cần NVIDIA driver và NVIDIA Container
-Toolkit.
+Docker image đã bao gồm Ubuntu 22.04, Gazebo Harmonic, công cụ build PX4,
+Python và các thư viện của ứng dụng. Mã nguồn trên host được mount vào `/app`
+trong container nên kết quả build PX4 và thay đổi source vẫn được lưu trong
+repository.
 
-### 1. Prerequisites
+### 1. Cài Docker Engine (chỉ thực hiện một lần)
 
-Cài Docker Engine bằng script (chỉ hỗ trợ Ubuntu 22.04):
+Từ thư mục gốc của repository, chạy script bằng user hiện tại, không thêm
+`sudo` trước script:
 
 ```bash
+cd ~/workspace/SW_UAV
 bash cmd/install_docker.sh
 ```
 
-Sau khi cài đặt, đăng xuất rồi đăng nhập lại hoặc chạy `newgrp docker`. Với GPU
-NVIDIA, kiểm tra Docker có truy cập được GPU:
+Script cài Docker Engine, Docker Compose, Buildx và thêm user hiện tại vào
+group `docker`. Sau khi cài xong, đăng xuất rồi đăng nhập lại hoặc chạy:
 
 ```bash
-docker run --rm --gpus all \
-  nvidia/cuda:12.4.1-cudnn-runtime-ubuntu22.04 \
-  nvidia-smi
+newgrp docker
 ```
 
-### 2. Build image
-
-Chạy từ thư mục gốc của repository:
+Kiểm tra cài đặt và quyền truy cập Docker:
 
 ```bash
-docker build --progress=plain \
-  -t sw-uav:latest \
-  -f docker/Dockerfile .
+id -nG
+docker --version
+docker compose version
+docker run --rm hello-world
 ```
 
-Lần build đầu có thể mất nhiều thời gian và cần nhiều dung lượng trống. Các
-lần build tiếp theo sẽ sử dụng Docker cache.
+`id -nG` phải có group `docker`. Nếu gặp lỗi truy cập
+`/var/run/docker.sock`, hãy mở terminal mới sau khi đăng nhập lại; không sửa
+socket bằng `chmod 666`.
 
-### 3. Open the development container
+### 2. Build image và khởi động container (CPU/AMD)
+
+Từ thư mục `docker`, dùng một lệnh để build image và chạy container:
 
 ```bash
-chmod +x docker/shell.sh
-./docker/shell.sh
+cd ~/workspace/SW_UAV/docker
+docker compose up -d --build
 ```
 
-Script mount toàn bộ repository vào `/app`, dùng network của host và chuyển
-X11/GPU vào container. Các thay đổi source trong container cũng xuất hiện ngay
-trên host.
-
-Script mặc định chạy với `--gpus all`. Trên máy không có GPU NVIDIA, bỏ tùy
-chọn này và các biến môi trường `NVIDIA_*` trong `docker/shell.sh` trước khi
-chạy.
-
-### 4. Run inside the container
-
-Build PX4 SITL lần đầu:
+Lệnh trên tạo image `sw-uav:latest`, tạo container `sw-uav` và chạy container
+ở chế độ nền. Cấu hình Compose mặc định sử dụng PyTorch CPU, phù hợp với máy
+CPU-only hoặc GPU AMD.
 
 ```bash
-cd /app/dependencies/PX4-Autopilot
-make px4_sitl gz_x500
+docker compose ps
+docker exec sw-uav python -c "import sklearn; print(sklearn.__version__)"
 ```
 
-Chạy giao diện trực tiếp:
+Ở các lần chạy sau, nếu Dockerfile và requirements không thay đổi, chỉ cần:
 
 ```bash
-python src/app.py
+cd ~/workspace/SW_UAV/docker
+docker compose up -d
 ```
 
-Hoặc chạy entry point chính với biến báo cho ứng dụng biết nó đang ở trong
-container:
+Không chạy `docker compose pull`: image của dự án được build từ Dockerfile
+trên máy và không được tải từ registry. Muốn cập nhật base image Ubuntu, dùng
+`docker compose build --pull` rồi chạy `docker compose up -d`.
+
+### 3. Build và chạy PX4 SITL
+
+Không cần mở shell bên trong container. Chạy PX4 trực tiếp từ terminal host:
 
 ```bash
-SW_UAV_DOCKER=1 python src/main.py
+docker exec -it sw-uav zsh
 ```
 
-Không cần cài `gnome-terminal` trong container. Nếu chạy `python src/main.py`
-mà không đặt `SW_UAV_DOCKER=1`, chương trình sẽ đi vào nhánh dành cho host và
-báo `gnome-terminal: not found`.
+Lần đầu PX4 sẽ được build trước khi PX4 SITL và Gazebo khởi động. Lệnh giữ
+terminal hiện tại để hiển thị log. Nhấn `Ctrl+C` để dừng.
 
-### 5. Run the complete simulation
+### 4. Chạy giao diện hoặc toàn bộ mô phỏng
 
-Chạy script điều phối trên **host**, không chạy bên trong container:
+Nếu giao diện Qt/Gazebo bị từ chối truy cập màn hình, chạy trên host:
 
 ```bash
+xhost +local:docker
+```
+
+Chạy riêng giao diện trong container từ một terminal host khác:
+
+```bash
+docker exec -it sw-uav bash -lc 'cd /app && python src/app.py'
+```
+
+Hoặc chạy toàn bộ mô phỏng bằng script điều phối trên host:
+
+```bash
+cd ~/workspace/SW_UAV
 ./swam_uav.sh
 ```
 
-Script sẽ sử dụng image `sw-uav:latest`, chuẩn bị PX4 và mở các terminal cho mô
-phỏng. Có thể đổi tên image/container bằng các biến `SW_UAV_IMAGE` và
-`SW_UAV_CONTAINER`.
+Không chạy đồng thời lệnh PX4 thủ công ở bước 3 và `swam_uav.sh`, vì script
+điều phối sẽ tự chuẩn bị và khởi động các tiến trình PX4.
+
+### 5. NVIDIA CUDA (tùy chọn)
+
+Docker Compose ở bước 2 mặc định dùng CPU. Trên máy NVIDIA, script điều phối
+sẽ tự kiểm tra GPU, CUDA và NVIDIA Container Toolkit:
+
+```bash
+cd ~/workspace/SW_UAV
+./docker/build.sh --detect
+./swam_uav.sh
+```
+
+Script chọn `cu118`, `cu124`, `cu126` hoặc tự chuyển về CPU. Host NVIDIA cần
+driver và NVIDIA Container Toolkit; không cần cài CUDA Toolkit hoặc cuDNN.
+
+### 6. Rebuild hoặc cài lại image
+
+Sau khi thay đổi Dockerfile hoặc requirements:
+
+```bash
+cd ~/workspace/SW_UAV/docker
+docker compose down
+docker compose up -d --build
+```
+
+Chỉ rebuild không cache khi nghi ngờ cache cũ bị lỗi:
+
+```bash
+cd ~/workspace/SW_UAV/docker
+docker compose down
+docker compose build --no-cache
+docker compose up -d --no-build
+```
+
+Cách rebuild không cache mất nhiều thời gian và tải lại toàn bộ dependencies.
+
+Các lệnh quản lý thường dùng:
+
+```bash
+docker compose ps       # xem trạng thái
+docker compose logs -f  # theo dõi log
+docker compose stop     # dừng nhưng giữ container
+docker compose down     # dừng và xóa container
+```
 
 
 ## Run program without Docker

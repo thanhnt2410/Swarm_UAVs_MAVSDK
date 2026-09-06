@@ -89,12 +89,13 @@ RUN apt-get update \
     && apt-get install -y --no-install-recommends libopencv-dev \
     && rm -rf /var/lib/apt/lists/*
 
-ARG PYTORCH_INDEX_URL=https://download.pytorch.org/whl/cu124
+ARG PYTORCH_VARIANT=cpu
+
+LABEL org.sw-uav.torch-variant="${PYTORCH_VARIANT}"
 
 ENV VIRTUAL_ENV=/opt/venv \
     PATH=/opt/venv/bin:${PATH} \
-    NVIDIA_VISIBLE_DEVICES=all \
-    NVIDIA_DRIVER_CAPABILITIES=compute,utility,graphics,video,display \
+    SW_UAV_TORCH_VARIANT=${PYTORCH_VARIANT} \
     QT_XCB_GL_INTEGRATION=xcb_glx \
     QTWEBENGINE_DISABLE_SANDBOX=1 \
     PIP_DISABLE_PIP_VERSION_CHECK=1 \
@@ -107,19 +108,23 @@ RUN python3 -m venv "${VIRTUAL_ENV}" \
 COPY docker/requirements.txt /tmp/app-requirements.txt
 COPY docker/requirements-px4.txt /tmp/px4-requirements.txt
 
-RUN python -m pip install -r /tmp/px4-requirements.txt \
+RUN case "${PYTORCH_VARIANT}" in \
+        cpu|cu118|cu124|cu126) ;; \
+        *) echo "Unsupported PYTORCH_VARIANT: ${PYTORCH_VARIANT}" >&2; exit 1 ;; \
+    esac \
+    && python -m pip install -r /tmp/px4-requirements.txt \
     && python -m pip install \
-        --index-url "${PYTORCH_INDEX_URL}" \
+        --index-url "https://download.pytorch.org/whl/${PYTORCH_VARIANT}" \
         --extra-index-url https://pypi.org/simple \
-        torch==2.6.0+cu124 \
-        torchvision==0.21.0+cu124 \
-        torchaudio==2.6.0+cu124 \
+        torch==2.6.0 \
+        torchvision==0.21.0 \
+        torchaudio==2.6.0 \
     && python -m pip install -r /tmp/app-requirements.txt
 
 # Keep frequently tweaked interactive-shell tooling after the heavy dependency
 # layers so prompt/theme changes do not invalidate the PX4/Gazebo/Python cache.
 RUN apt-get update \
-    && apt-get install -y --no-install-recommends zsh \
+    && apt-get install -y --no-install-recommends xdg-utils zsh \
     && rm -rf /var/lib/apt/lists/*
 
 RUN printf '%s\n' \

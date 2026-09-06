@@ -35,9 +35,10 @@ readonly NVIDIA_LIST_URL="https://nvidia.github.io/libnvidia-container/stable/de
 # Config
 # ------------------------------------------------------------
 
-# INSTALL_NVIDIA=1:
-#   Cài NVIDIA Container Toolkit.
-INSTALL_NVIDIA="${INSTALL_NVIDIA:-1}"
+# INSTALL_NVIDIA=auto:
+#   Chỉ cài NVIDIA Container Toolkit khi host có NVIDIA GPU/driver hoạt động.
+#   Có thể đặt 0 hoặc 1 để ghi đè việc tự phát hiện.
+INSTALL_NVIDIA="${INSTALL_NVIDIA:-auto}"
 
 # DOCKER_TEST=1:
 #   Chạy hello-world để kiểm tra Docker.
@@ -138,6 +139,21 @@ fi
 
 
 export DEBIAN_FRONTEND=noninteractive
+
+case "${INSTALL_NVIDIA}" in
+    auto)
+        if command -v nvidia-smi &>/dev/null && nvidia-smi -L &>/dev/null; then
+            INSTALL_NVIDIA=1
+        else
+            INSTALL_NVIDIA=0
+        fi
+        ;;
+    0|1) ;;
+    *)
+        echo "INSTALL_NVIDIA phải là auto, 0 hoặc 1."
+        exit 1
+        ;;
+esac
 
 
 echo "=========================================="

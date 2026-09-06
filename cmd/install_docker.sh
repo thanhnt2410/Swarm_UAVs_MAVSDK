@@ -1,4 +1,3 @@
-```bash
 #!/usr/bin/env bash
 
 set -Eeuo pipefail
@@ -25,6 +24,7 @@ if [[ ! -f /etc/os-release ]]; then
   exit 1
 fi
 
+# shellcheck disable=SC1091
 source /etc/os-release
 
 if [[ "${ID}" != "ubuntu" ]]; then
@@ -166,4 +166,3 @@ echo "Sau đó kiểm tra:"
 echo
 echo "    docker run --rm hello-world"
 echo "    docker compose version"
-```
